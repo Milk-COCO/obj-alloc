@@ -2,6 +2,8 @@ use std::ops::{Deref, DerefMut};
 use field_collex::{Collexetable};
 use slotmap::Key;
 
+#[derive(Debug)]
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct Obj<K,O>(pub K, pub O)
 where
     K: Key,
