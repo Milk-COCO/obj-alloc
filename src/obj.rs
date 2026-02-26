@@ -1,5 +1,5 @@
 use std::ops::{Deref, DerefMut};
-use field_collex::{Collexetable, FieldValue};
+use field_collex::{Collexetable};
 use slotmap::Key;
 
 pub struct Obj<K,O>(pub K, pub O)
