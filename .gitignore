@@ -1,0 +1,12 @@
+target/
+
+.idea/
+.vscode/
+
+tmp/
+logs/
+
+.cargo/
+.rustup/
+
+Cargo.lock
