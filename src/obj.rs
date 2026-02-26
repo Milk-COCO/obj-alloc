@@ -1,22 +1,22 @@
 use std::ops::{Deref, DerefMut};
 use field_collex::{Collexetable};
-use slotmap::Key;
+use crate::Id;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct Obj<K,O>(pub K, pub O)
 where
-    K: Key,
+    K: Id,
 ;
 
-impl<K: Key,E> Deref for Obj<K,E>{
+impl<K: Id,E> Deref for Obj<K,E>{
     type Target = E;
     fn deref(&self) -> &Self::Target {
         &self.1
     }
 }
 
-impl<K: Key,E> DerefMut for Obj<K,E>{
+impl<K: Id,E> DerefMut for Obj<K,E>{
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.1
     }
@@ -24,7 +24,7 @@ impl<K: Key,E> DerefMut for Obj<K,E>{
 
 impl<K,E,V> Collexetable<V> for Obj<K,E>
 where
-    K: Key,
+    K: Id,
     E: Collexetable<V>,
 {
     fn collexate(&self) -> V {
