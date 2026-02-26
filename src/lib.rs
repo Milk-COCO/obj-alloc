@@ -1,5 +1,6 @@
 mod obj;
 
+use std::ops::{Deref, DerefMut};
 use field_collex::{Collexetable, FieldCollex, FieldValue};
 use field_collex::collex::*;
 use slotmap::{Key, SlotMap};
@@ -14,6 +15,29 @@ where
 {
     pub slot: SlotMap<K,T>,
     pub collex: FieldCollex<Obj<K,O>,T>
+}
+
+impl<K,V,E> Deref for ObjAllocator<K,V,E>
+where
+    K: Key,
+    E: Collexetable<V>,
+    V: FieldValue,
+{
+    type Target =  FieldCollex<Obj<K,E>,V>;
+    fn deref(&self) -> &Self::Target {
+        &self.collex
+    }
+}
+
+impl<K,V,E> DerefMut for ObjAllocator<K,V,E>
+where
+    K: Key,
+    E: Collexetable<V>,
+    V: FieldValue,
+{
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.collex
+    }
 }
 
 
