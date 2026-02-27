@@ -2,7 +2,6 @@
 //! 核心特性：插入值自动返回递增 Id、Id 浅包装 u64、无任何条件编译
 
 use core::fmt;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::ops::{Index, IndexMut};
@@ -21,61 +20,25 @@ pub trait Id: Copy + Clone + Eq + PartialEq + fmt::Debug + Into<u64> + From<u64>
     }
 }
 
-/// 默认 Id 类型：仅浅包装 u64，无任何额外逻辑
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct DefaultId(pub u64);
-
-// DefaultId 实现 Into/From u64（核心简化）
-impl From<u64> for DefaultId {
-    #[inline]
-    fn from(val: u64) -> Self {
-        Self(val)
-    }
-}
-
-impl From<DefaultId> for u64 {
-    #[inline]
-    fn from(id: DefaultId) -> Self {
-        id.0
-    }
-}
-
-impl Id for DefaultId {}
-
-// ============================ Id 透明序列化（无条件编译） ============================
-impl Serialize for DefaultId {
-    #[inline]
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        // 透明序列化：直接输出内部 u64
-        self.0.serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for DefaultId {
-    #[inline]
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        // 透明反序列化：直接解析 u64 再包装
-        let val = u64::deserialize(deserializer)?;
-        Ok(Self(val))
-    }
-}
 
 // ============================ 自定义 Id 生成宏 ============================
 /// 生成自定义 Id 类型的极简宏
 #[macro_export]
 macro_rules! new_id_type {
-    ($(#[$meta:meta])* struct $name:ident; ) => {
+    // 递归终止条件：无剩余参数时结束
+    () => {};
+
+    // 核心匹配模式：单个 ID 结构体定义（带可选 vis + 属性 + 名称）
+    (
+        $(#[$meta:meta])*
+        $vis:vis struct $name:ident;
+        $($rest:tt)*
+    ) => {
+        // 生成单个 ID 结构体的完整定义
         $(#[$meta])*
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-        pub struct $name(pub u64);
+        $vis struct $name(pub u64);
 
-        // 实现 u64 互转（核心）
         impl From<u64> for $name {
             #[inline]
             fn from(val: u64) -> Self {
@@ -90,10 +53,8 @@ macro_rules! new_id_type {
             }
         }
 
-        // 实现 Id trait
         impl $crate::Id for $name {}
 
-        // 透明序列化（无条件编译）
         impl serde::Serialize for $name {
             #[inline]
             fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -114,8 +75,15 @@ macro_rules! new_id_type {
                 Ok(Self(val))
             }
         }
+
+        $crate::new_id_type!($($rest)*);
     };
 }
+
+new_id_type!{
+    pub struct DefaultId;
+}
+
 
 // ============================ IdMap 核心实现（自动生成递增 Id） ============================
 /// 极简版 IdMap：自动生成递增 Id + HashMap 存储 + 无条件编译
