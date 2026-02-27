@@ -1,5 +1,5 @@
 use field_collex::{Collexetable, FieldCollex, FieldValue};
-use field_collex::collex::serialize::FieldCollexSerdeHelper;
+use field_collex::collex::serialize::{FieldCollexSerdeHelper, FieldCollexSerdeWrapper};
 use serde::{Deserialize, Deserializer};
 use serde::de::Error;
 use crate::{Id, IdMap, ObjAllocator};
@@ -17,7 +17,9 @@ where
     {
         // 核心优化1：直接复用 FieldCollexSerdeHelper，避免二次解析 FieldCollex
         // （原逻辑是先解析 FieldCollex，再从 FieldCollex 取元素；现在直接解析到 Helper，提前拿到结构化数据）
-        let collex_helper = FieldCollexSerdeHelper::<Obj<K,O>, T>::deserialize(deserializer)?;
+        let collex_helper: FieldCollexSerdeHelper<Obj<K,O>, T> = FieldCollexSerdeWrapper::<Obj<K,O>, T>::deserialize(deserializer)
+            .map_err(|err|D::Error::custom(format!("反序列化 FieldCollexSerdeHelper 失败: {}", err)))?
+            .into();
         
         // 核心优化2：利用 elements 的长度预分配 IdMap 容量，避免 HashMap 动态扩容（性能提升关键）
         let elements_len = collex_helper.elements.len();
@@ -34,7 +36,7 @@ where
         
         // 还原 FieldCollex（复用已解析的 span/unit/elements，无重复构造）
         let collex = FieldCollex::with_elements(collex_helper.span, collex_helper.unit, collex_helper.elements)
-            .map_err(|e| D::Error::custom(format!("反序列化 FieldCollex 失败: {}", e)))?;
+            .map_err(|e| D::Error::custom(format!("反序列化时创建 FieldCollex 失败: {}", e)))?;
         
         Ok(Self {
             id_map,
@@ -46,6 +48,7 @@ where
 
 #[cfg(test)]
 mod tests {
+    use field_collex::collex::serialize::{default_span, default_unit};
     use serde::Serialize;
     use super::*;
     use serde_json;
@@ -101,8 +104,8 @@ mod tests {
         // 步骤4：验证一致性
         let (id_map,collex) = deserialized.into_raw_parts();
         // 验证 collex 一致
-        assert_eq!(collex.span().clone(), span);
-        assert_eq!(collex.unit().clone(), unit);
+        assert_eq!(collex.span().clone(), default_span());
+        assert_eq!(collex.unit().clone(), default_unit::<u32>());
         assert_eq!(collex
                        .into_iter()
                        .collect::<Vec<Obj<DefaultId, TestO>>>(), elements);

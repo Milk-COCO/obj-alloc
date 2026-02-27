@@ -3,12 +3,12 @@ pub mod id_map;
 pub mod deser;
 
 pub use id_map::*;
+pub use obj::*;
 
 use std::ops::{Deref, DerefMut};
 use field_collex::{Collexetable, FieldCollex, FieldValue};
 use field_collex::collex::*;
 use span_core::Span;
-use crate::obj::{Obj};
 
 pub(crate) fn insert<K,E,V>(id_map: &mut IdMap<K,V>, elem: E) -> Obj<K,E>
 where
@@ -40,6 +40,7 @@ where
 
 #[derive(Debug)]
 #[derive(serde::Serialize)]
+#[serde(transparent)]
 pub struct ObjAllocator<K,T,O>
 where
     K: Id,
