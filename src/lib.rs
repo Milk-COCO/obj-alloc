@@ -1,34 +1,34 @@
-pub mod obj;
+pub mod pair;
 pub mod id_map;
 pub mod deser;
 
 pub use id_map::*;
-pub use obj::*;
+pub use pair::*;
 
 use std::ops::{Deref, DerefMut};
 use field_collex::{Collexetable, FieldCollex, FieldValue};
 use field_collex::collex::*;
 use span_core::Span;
 
-pub(crate) fn insert<K,E,V>(id_map: &mut IdMap<K,V>, elem: E) -> Obj<K,E>
+pub(crate) fn insert<K,E,V>(id_map: &mut IdMap<K,V>, elem: E) -> Pair<K,E>
 where
     K: Id,
     E: Collexetable<V>,
     V: FieldValue,
 {
-    Obj(
+    Pair(
         id_map.insert(elem.collexate()),
         elem
     )
 }
 
-pub(crate) fn extend_from_vec<K,E,V>(id_map: &mut IdMap<K,V>, vec: Vec<E>) -> Vec<Obj<K,E>>
+pub(crate) fn extend_from_vec<K,E,V>(id_map: &mut IdMap<K,V>, vec: Vec<E>) -> Vec<Pair<K,E>>
 where
     K: Id,
     E: Collexetable<V>,
     V: FieldValue,
 {
-    let mut other: Vec<Obj<K,E>> = Vec::new();
+    let mut other: Vec<Pair<K,E>> = Vec::new();
     vec.into_iter().for_each(|e|
         {
             other.push(insert(id_map, e))
@@ -41,7 +41,7 @@ where
 #[derive(Debug)]
 #[derive(serde::Serialize)]
 #[serde(transparent)]
-pub struct ObjAllocator<K,T,O>
+pub struct OrdAllocator<K,T,O>
 where
     K: Id,
     O: Collexetable<T>,
@@ -49,22 +49,22 @@ where
 {
     #[serde(skip)]
     pub id_map: IdMap<K,T>,
-    pub collex: FieldCollex<Obj<K,O>,T>
+    pub collex: FieldCollex<Pair<K,O>,T>
 }
 
-impl<K,V,E> Deref for ObjAllocator<K,V,E>
+impl<K,V,E> Deref for OrdAllocator<K,V,E>
 where
     K: Id,
     E: Collexetable<V>,
     V: FieldValue,
 {
-    type Target =  FieldCollex<Obj<K,E>,V>;
+    type Target =  FieldCollex<Pair<K,E>,V>;
     fn deref(&self) -> &Self::Target {
         &self.collex
     }
 }
 
-impl<K,V,E> DerefMut for ObjAllocator<K,V,E>
+impl<K,V,E> DerefMut for OrdAllocator<K,V,E>
 where
     K: Id,
     E: Collexetable<V>,
@@ -76,7 +76,7 @@ where
 }
 
 
-impl<K, V, E> ObjAllocator<K, V, E>
+impl<K, V, E> OrdAllocator<K, V, E>
 where
     K: Id,
     E: Collexetable<V>,
@@ -121,7 +121,7 @@ where
         self.collex.extend(other)
     }
     
-    pub fn try_extend(&mut self, vec: Vec<E>) -> TryExtendResult<Obj<K, E>> {
+    pub fn try_extend(&mut self, vec: Vec<E>) -> TryExtendResult<Pair<K, E>> {
         let other = extend_from_vec(&mut self.id_map, vec);
         self.collex.try_extend(other)
     }
@@ -189,11 +189,11 @@ where
         self.collex.get(*v).map(|v| &v.1)
     }
     
-    pub fn into_raw_parts(self) -> (IdMap<K,V>, FieldCollex<Obj<K,E>,V>) {
+    pub fn into_raw_parts(self) -> (IdMap<K,V>, FieldCollex<Pair<K,E>,V>) {
         (self.id_map,self.collex)
     }
     
-    pub fn from_raw_parts(id_map: IdMap<K,V>, collex: FieldCollex<Obj<K,E>,V>) -> Self {
+    pub fn from_raw_parts(id_map: IdMap<K,V>, collex: FieldCollex<Pair<K,E>,V>) -> Self {
         Self {
             id_map, collex
         }

@@ -2,10 +2,10 @@ use field_collex::{Collexetable, FieldCollex, FieldValue};
 use field_collex::collex::serialize::{FieldCollexSerdeHelper, FieldCollexSerdeWrapper};
 use serde::{Deserialize, Deserializer};
 use serde::de::Error;
-use crate::{Id, IdMap, ObjAllocator};
-use crate::obj::Obj;
+use crate::{Id, IdMap, OrdAllocator};
+use crate::pair::Pair;
 
-impl<'de, K, T, O> Deserialize<'de> for ObjAllocator<K, T, O>
+impl<'de, K, T, O> Deserialize<'de> for OrdAllocator<K, T, O>
 where
     O: Collexetable<T> + Deserialize<'de>,
     T: FieldValue + Deserialize<'de>,
@@ -17,7 +17,7 @@ where
     {
         // 核心优化1：直接复用 FieldCollexSerdeHelper，避免二次解析 FieldCollex
         // （原逻辑是先解析 FieldCollex，再从 FieldCollex 取元素；现在直接解析到 Helper，提前拿到结构化数据）
-        let collex_helper: FieldCollexSerdeHelper<Obj<K,O>, T> = FieldCollexSerdeWrapper::<Obj<K,O>, T>::deserialize(deserializer)
+        let collex_helper: FieldCollexSerdeHelper<Pair<K,O>, T> = FieldCollexSerdeWrapper::<Pair<K,O>, T>::deserialize(deserializer)
             .map_err(|err|D::Error::custom(format!("反序列化 FieldCollexSerdeHelper 失败: {}", err)))?
             .into();
         
@@ -78,9 +78,9 @@ mod tests {
         let span = Span::Finite(0u32..100u32);
         let unit = 10u32;
         let elements = vec![
-            Obj(DefaultId(1), TestO(10)),
-            Obj(DefaultId(2), TestO(20)),
-            Obj(DefaultId(3), TestO(30)),
+            Pair(DefaultId(1), TestO(10)),
+            Pair(DefaultId(2), TestO(20)),
+            Pair(DefaultId(3), TestO(30)),
         ];
         // 构造 FieldCollex
         let collex = FieldCollex::with_elements(span.clone(), unit.clone(), elements.clone())
@@ -91,14 +91,14 @@ mod tests {
             id_map.insert_with_id(obj.0, obj.1.collexate());
         }
         // 原始 ObjAllocator
-        let original = ObjAllocator { id_map, collex };
+        let original = OrdAllocator { id_map, collex };
         
         // 步骤2：序列化
         let json = serde_json::to_string(&original).expect("序列化失败");
         println!("序列化结果：\n{}", json);
         
         // 步骤3：反序列化
-        let deserialized: ObjAllocator<DefaultId, TestT, TestO> = serde_json::from_str(&json)
+        let deserialized: OrdAllocator<DefaultId, TestT, TestO> = serde_json::from_str(&json)
             .expect("反序列化失败");
         
         // 步骤4：验证一致性
@@ -108,7 +108,7 @@ mod tests {
         assert_eq!(collex.unit().clone(), default_unit::<u32>());
         assert_eq!(collex
                        .into_iter()
-                       .collect::<Vec<Obj<DefaultId, TestO>>>(), elements);
+                       .collect::<Vec<Pair<DefaultId, TestO>>>(), elements);
         // 验证 id_map 一致（遍历所有 Id 检查值）
         for obj in &elements {
             let id = obj.0;
@@ -127,14 +127,14 @@ mod tests {
         let unit = 1032;
         let collex = FieldCollex::new(span, unit)
             .expect("构造空 FieldCollex 失败");
-        let original: ObjAllocator<DefaultId, TestT, TestO> = ObjAllocator {
+        let original: OrdAllocator<DefaultId, TestT, TestO> = OrdAllocator {
             id_map: IdMap::with_capacity(0),
             collex,
         };
         
         // 序列化 + 反序列化
         let json = serde_json::to_string(&original).unwrap();
-        let deserialized: ObjAllocator<DefaultId, TestT, TestO> = serde_json::from_str(&json).unwrap();
+        let deserialized: OrdAllocator<DefaultId, TestT, TestO> = serde_json::from_str(&json).unwrap();
         
         // 验证空
         assert!(deserialized.collex.is_empty());

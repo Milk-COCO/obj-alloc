@@ -4,25 +4,25 @@ use crate::Id;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[derive(serde::Serialize, serde::Deserialize)]
-pub struct Obj<K,O>(pub K, pub O)
+pub struct Pair<K,O>(pub K, pub O)
 where
     K: Id,
 ;
 
-impl<K: Id,E> Deref for Obj<K,E>{
+impl<K: Id,E> Deref for Pair<K,E>{
     type Target = E;
     fn deref(&self) -> &Self::Target {
         &self.1
     }
 }
 
-impl<K: Id,E> DerefMut for Obj<K,E>{
+impl<K: Id,E> DerefMut for Pair<K,E>{
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.1
     }
 }
 
-impl<K,E,V> Collexetable<V> for Obj<K,E>
+impl<K,E,V> Collexetable<V> for Pair<K,E>
 where
     K: Id,
     E: Collexetable<V>,
