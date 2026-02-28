@@ -2,10 +2,10 @@ use field_collex::{Collexetable, FieldCollex, FieldValue};
 use field_collex::collex::serialize::{FieldCollexSerdeHelper, FieldCollexSerdeWrapper};
 use serde::{Deserialize, Deserializer};
 use serde::de::Error;
-use crate::{Id, IdMap, OrdAllocator};
+use crate::{Id, IdMap, OrdIdMap};
 use crate::pair::Pair;
 
-impl<'de, K, T, O> Deserialize<'de> for OrdAllocator<K, T, O>
+impl<'de, K, O, T> Deserialize<'de> for OrdIdMap<K, O, T>
 where
     O: Collexetable<T> + Deserialize<'de>,
     T: FieldValue + Deserialize<'de>,
@@ -91,14 +91,14 @@ mod tests {
             id_map.insert_with_id(obj.0, obj.1.collexate());
         }
         // 原始 ObjAllocator
-        let original = OrdAllocator { id_map, collex };
+        let original = OrdIdMap { id_map, collex };
         
         // 步骤2：序列化
         let json = serde_json::to_string(&original).expect("序列化失败");
         println!("序列化结果：\n{}", json);
         
         // 步骤3：反序列化
-        let deserialized: OrdAllocator<DefaultId, TestT, TestO> = serde_json::from_str(&json)
+        let deserialized: OrdIdMap<DefaultId, TestO, TestT> = serde_json::from_str(&json)
             .expect("反序列化失败");
         
         // 步骤4：验证一致性
@@ -127,14 +127,14 @@ mod tests {
         let unit = 1032;
         let collex = FieldCollex::new(span, unit)
             .expect("构造空 FieldCollex 失败");
-        let original: OrdAllocator<DefaultId, TestT, TestO> = OrdAllocator {
+        let original: OrdIdMap<DefaultId, TestO, TestT> = OrdIdMap {
             id_map: IdMap::with_capacity(0),
             collex,
         };
         
         // 序列化 + 反序列化
         let json = serde_json::to_string(&original).unwrap();
-        let deserialized: OrdAllocator<DefaultId, TestT, TestO> = serde_json::from_str(&json).unwrap();
+        let deserialized: OrdIdMap<DefaultId, TestO, TestT> = serde_json::from_str(&json).unwrap();
         
         // 验证空
         assert!(deserialized.collex.is_empty());

@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 pub mod pair;
 pub mod id_map;
 pub mod deser;
@@ -41,7 +42,7 @@ where
 #[derive(Debug)]
 #[derive(serde::Serialize)]
 #[serde(transparent)]
-pub struct OrdAllocator<K,T,O>
+pub struct OrdIdMap<K,O,T>
 where
     K: Id,
     O: Collexetable<T>,
@@ -52,7 +53,7 @@ where
     pub collex: FieldCollex<Pair<K,O>,T>
 }
 
-impl<K,V,E> Deref for OrdAllocator<K,V,E>
+impl<K,E,V> Deref for OrdIdMap<K,E,V>
 where
     K: Id,
     E: Collexetable<V>,
@@ -64,7 +65,7 @@ where
     }
 }
 
-impl<K,V,E> DerefMut for OrdAllocator<K,V,E>
+impl<K,E,V> DerefMut for OrdIdMap<K,E,V>
 where
     K: Id,
     E: Collexetable<V>,
@@ -76,7 +77,7 @@ where
 }
 
 
-impl<K, V, E> OrdAllocator<K, V, E>
+impl<K, E, V> OrdIdMap<K, E, V>
 where
     K: Id,
     E: Collexetable<V>,
