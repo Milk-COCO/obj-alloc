@@ -5,6 +5,7 @@ use core::fmt;
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::ops::{Index, IndexMut};
+use serde::{Deserialize, Serialize};
 
 // ============================ 核心 Id 定义 ============================
 /// Id 基础 trait，所有自定义 Id 需实现此 trait
@@ -88,9 +89,12 @@ new_id_type!{
 // ============================ IdMap 核心实现（自动生成递增 Id） ============================
 /// 极简版 IdMap：自动生成递增 Id + HashMap 存储 + 无条件编译
 #[derive(Debug, Clone)]
+#[derive(Serialize, Deserialize)]
 pub struct IdMap<K: Id, V> {
     pub(crate) inner: HashMap<u64, V>, // 底层存储：u64 -> V
+    #[serde(skip)]
     max_id: u64,            // 记录最大 Id，用于生成递增 Id
+    #[serde(skip)]
     _marker: PhantomData<K>,
 }
 
