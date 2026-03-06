@@ -106,6 +106,12 @@ impl<V> IdMap<DefaultId, V> {
     pub fn with_capacity(capacity: usize) -> Self { Self::with_id_capacity(capacity) }
 }
 
+impl<K: Id ,V> Default for IdMap<K, V> {
+    fn default() -> Self {
+        Self::with_id()
+    }
+}
+
 impl<K: Id, V> IdMap<K, V> {
     /// 为自定义 Id 类型创建空 IdMap
     pub fn with_id() -> Self {
