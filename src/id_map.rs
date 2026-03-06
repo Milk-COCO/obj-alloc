@@ -90,6 +90,7 @@ new_id_type!{
 /// 极简版 IdMap：自动生成递增 Id + HashMap 存储 + 无条件编译
 #[derive(Debug, Clone)]
 #[derive(Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct IdMap<K: Id, V> {
     pub(crate) inner: HashMap<u64, V>, // 底层存储：u64 -> V
     #[serde(skip)]
