@@ -39,7 +39,7 @@ where
     other
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[derive(serde::Serialize)]
 #[serde(transparent)]
 pub struct OrdIdMap<K,O,T>
