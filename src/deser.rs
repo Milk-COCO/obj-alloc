@@ -1,5 +1,5 @@
 use field_collex::{Collexetable, FieldCollex, FieldValue};
-use field_collex::collex::serialize::{FieldCollexSerdeHelper, FieldCollexSerdeWrapper};
+use field_collex::collex::se::{FieldCollexSerdeHelper, FieldCollexSerdeWrapper};
 use serde::{Deserialize, Deserializer};
 use serde::de::Error;
 use crate::{Id, IdMap, OrdIdMap};
@@ -48,7 +48,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use field_collex::collex::serialize::{default_span, default_unit};
+    use field_collex::collex::se::{default_span, default_unit};
     use serde::Serialize;
     use super::*;
     use serde_json;
