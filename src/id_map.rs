@@ -10,6 +10,16 @@ use serde::{Deserialize, Serialize};
 // ============================ 核心 Id 定义 ============================
 /// Id 基础 trait，所有自定义 Id 需实现此 trait
 pub trait Id: Copy + Clone + Eq + PartialEq + fmt::Debug + Into<u64> + From<u64> {
+    const NONE: Self;
+
+    fn none() -> Self {
+        Self::NONE
+    }
+    
+    fn is_none(&self) -> bool {
+        self.eq(&Self::NONE)
+    }
+    
     /// 快速转换为 u64
     fn as_u64(&self) -> u64 {
         (*self).into()
@@ -54,7 +64,9 @@ macro_rules! new_id_type {
             }
         }
 
-        impl $crate::Id for $name {}
+        impl $crate::Id for $name {
+            const NONE: Self = Self(0);
+        }
 
         impl serde::Serialize for $name {
             #[inline]
