@@ -201,4 +201,105 @@ where
     }
 }
 
+use field_collex::collex::iter::{Iter as CollexIter, IntoIter as CollexIntoIter};
 
+pub struct Iter<'a, K, O, T>
+where
+    K: Id,
+    O: Collexetable<T>,
+    T: FieldValue,
+{
+    inner: CollexIter<'a, Pair<K, O>, T>,
+}
+
+impl<'a, K, O, T> Iterator for Iter<'a, K, O, T>
+where
+    K: Id,
+    O: Collexetable<T>,
+    T: FieldValue,
+{
+    type Item = &'a O;
+    
+    fn next(&mut self) -> Option<Self::Item> {
+        // CollexIter 产出 &Pair<K, O>，我们映射出 &O
+        self.inner.next().map(|pair| &pair.1)
+    }
+    
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
+    }
+}
+
+pub struct IntoIter<K, O, T>
+where
+    K: Id,
+    O: Collexetable<T>,
+    T: FieldValue,
+{
+    inner: CollexIntoIter<Pair<K, O>, T>,
+}
+
+impl<K, O, T> Iterator for IntoIter<K, O, T>
+where
+    K: Id,
+    O: Collexetable<T>,
+    T: FieldValue,
+{
+    type Item = O;
+    
+    fn next(&mut self) -> Option<Self::Item> {
+        // CollexIntoIter 产出 Pair<K, O>，我们映射出 O
+        self.inner.next().map(|pair| pair.1)
+    }
+    
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
+    }
+}
+
+pub struct Keys<'a, K: id_map::Id, O: field_collex::Collexetable<T>, T: field_collex::FieldValue> {
+    inner: CollexIter<'a, Pair<K, O>, T>,
+}
+
+impl<K, O, T> OrdIdMap<K, O, T>
+where
+    K: Id,
+    O: Collexetable<T>,
+    T: FieldValue,
+{
+    pub fn iter(&self) -> Iter<'_, K, O, T> {
+        Iter {
+            inner: self.collex.iter(),
+        }
+    }
+}
+
+impl<'a, K, O, T> IntoIterator for &'a OrdIdMap<K, O, T>
+where
+    K: Id,
+    O: Collexetable<T>,
+    T: FieldValue,
+{
+    type Item = &'a O;
+    type IntoIter = Iter<'a, K, O, T>;
+    
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl<K, O, T> IntoIterator for OrdIdMap<K, O, T>
+where
+    K: Id,
+    O: Collexetable<T>,
+    T: FieldValue,
+{
+    type Item = O;
+    type IntoIter = IntoIter<K, O, T>;
+    
+    fn into_iter(self) -> Self::IntoIter {
+        IntoIter {
+            inner: self.collex.into_iter(),
+        }
+    }
+}

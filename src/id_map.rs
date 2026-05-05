@@ -2,10 +2,10 @@
 //! 核心特性：插入值自动返回递增 Id、Id 浅包装 u64、无任何条件编译
 
 use core::fmt;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::ops::{Index, IndexMut};
-use serde::{Deserialize, Serialize};
 
 // ============================ 核心 Id 定义 ============================
 /// Id 基础 trait，所有自定义 Id 需实现此 trait
@@ -98,16 +98,10 @@ new_id_type!{
 }
 
 
-// ============================ IdMap 核心实现（自动生成递增 Id） ============================
-/// 极简版 IdMap：自动生成递增 Id + HashMap 存储 + 无条件编译
 #[derive(Debug, Clone)]
-#[derive(Serialize, Deserialize)]
-#[serde(transparent)]
 pub struct IdMap<K: Id, V> {
-    pub(crate) inner: HashMap<u64, V>, // 底层存储：u64 -> V
-    #[serde(skip)]
-    max_id: u64,            // 记录最大 Id，用于生成递增 Id
-    #[serde(skip)]
+    pub(crate) inner: HashMap<u64, V>,
+    max_id: u64,
     _marker: PhantomData<K>,
 }
 
@@ -239,7 +233,85 @@ impl<K: Id, V> IdMap<K, V> {
     }
 }
 
-// ============================ Index/IndexMut 实现 ============================
+impl<K: Id, V: Serialize> Serialize for IdMap<K, V> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        // 直接序列化内部的 HashMap，就像 IdMap 不存在一样
+        self.inner.serialize(serializer)
+    }
+}
+
+impl<'de, K: Id, V: Deserialize<'de>> Deserialize<'de> for IdMap<K, V> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let inner: HashMap<u64, V> = HashMap::deserialize(deserializer)?;
+        
+        let max_id = inner.keys().copied().max().unwrap_or(0);
+        
+        Ok(IdMap {
+            inner,
+            max_id,
+            _marker: PhantomData,
+        })
+    }
+}
+
+use std::collections::hash_map;
+use std::iter::{Map};
+
+impl<K: Id, V> IntoIterator for IdMap<K, V> {
+    type Item = (K, V);
+    type IntoIter = Map<hash_map::IntoIter<u64, V>, fn((u64, V)) -> (K, V)>;
+    
+    fn into_iter(self) -> Self::IntoIter {
+        self.inner.into_iter().map(|(id_u64, v)| (K::from_u64(id_u64), v))
+    }
+}
+
+impl<'a, K: Id, V> IntoIterator for &'a IdMap<K, V> {
+    type Item = (K, &'a V);
+    type IntoIter = Map<hash_map::Iter<'a, u64, V>, fn((&'a u64, &'a V)) -> (K, &'a V)>;
+    
+    fn into_iter(self) -> Self::IntoIter {
+        self.inner.iter().map(|(id_u64, v)| (K::from_u64(*id_u64), v))
+    }
+}
+
+impl<'a, K: Id, V> IntoIterator for &'a mut IdMap<K, V> {
+    type Item = (K, &'a mut V);
+    type IntoIter = Map<hash_map::IterMut<'a, u64, V>, fn((&'a u64, &'a mut V)) -> (K, &'a mut V)>;
+    
+    fn into_iter(self) -> Self::IntoIter {
+        self.inner.iter_mut().map(|(id_u64, v)| (K::from_u64(*id_u64), v))
+    }
+}
+
+impl<K: Id, V> IdMap<K, V> {
+    pub fn iter<'a>(&'a self) -> Map<hash_map::Iter<'a, u64, V>, fn((&'a u64, &'a V)) -> (K, &'a V)> {
+        self.inner.iter().map(|(id_u64, v)| (K::from_u64(*id_u64), v))
+    }
+    
+    pub fn iter_mut<'a>(&'a mut self) -> Map<hash_map::IterMut<'a, u64, V>, fn((&'a u64, &'a mut V)) -> (K, &'a mut V)> {
+        self.inner.iter_mut().map(|(id_u64, v)| (K::from_u64(*id_u64), v))
+    }
+    
+    pub fn keys(&self) -> Map<hash_map::Keys<'_, u64, V>, fn(&u64) -> K> {
+        self.inner.keys().map(|id_u64| K::from_u64(*id_u64))
+    }
+    
+    pub fn values(&self) -> hash_map::Values<'_, u64, V> {
+        self.inner.values()
+    }
+    
+    pub fn values_mut(&mut self) -> hash_map::ValuesMut<'_, u64, V> {
+        self.inner.values_mut()
+    }
+}
+
 impl<K: Id, V> Index<K> for IdMap<K, V> {
     type Output = V;
     
