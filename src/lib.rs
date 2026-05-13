@@ -143,7 +143,27 @@ where
                 }
             )
     }
-    
+
+    pub fn insert_with_id(&mut self, id: K, elem: E) -> Result<Option<E>, InsertFieldCollexError<E>>  {
+        use InsertFieldCollexError::*;
+        let value = elem.collexate();
+        self.id_map
+            .insert_with_id(id, value)
+            .map(|v|self.collex.remove(v).unwrap());
+
+        self.collex.insert(Pair(id, elem))
+            .map(|_| None)
+            .map_err(|err|
+                {
+                    self.id_map.remove(id);
+                    match err {
+                        OutOfSpan(o) => { OutOfSpan(o.1) }
+                        AlreadyExist(o) => { AlreadyExist(o.1) }
+                    }
+                }
+            )
+    }
+
     pub fn remove(&mut self, id: K) -> Option<E> {
         let v = self.id_map.remove(id)?;
         

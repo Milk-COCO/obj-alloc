@@ -1,5 +1,3 @@
-//! 极简版 IdMap：自动生成递增 Id + Id 透明序列化 + 无条件编译
-//! 核心特性：插入值自动返回递增 Id、Id 浅包装 u64、无任何条件编译
 
 use core::fmt;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -7,7 +5,6 @@ use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::ops::{Index, IndexMut};
 
-// ============================ 核心 Id 定义 ============================
 /// Id 基础 trait，所有自定义 Id 需实现此 trait
 pub trait Id: Copy + Clone + Eq + PartialEq + fmt::Debug + Into<u64> + From<u64> {
     const NONE: Self;
@@ -32,20 +29,16 @@ pub trait Id: Copy + Clone + Eq + PartialEq + fmt::Debug + Into<u64> + From<u64>
 }
 
 
-// ============================ 自定义 Id 生成宏 ============================
 /// 生成自定义 Id 类型的极简宏
 #[macro_export]
 macro_rules! new_id_type {
-    // 递归终止条件：无剩余参数时结束
     () => {};
 
-    // 核心匹配模式：单个 ID 结构体定义（带可选 vis + 属性 + 名称）
     (
         $(#[$meta:meta])*
         $vis:vis struct $name:ident;
         $($rest:tt)*
     ) => {
-        // 生成单个 ID 结构体的完整定义
         $(#[$meta])*
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
         $vis struct $name(pub u64);
