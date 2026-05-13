@@ -238,11 +238,10 @@ where
     O: Collexetable<T>,
     T: FieldValue,
 {
-    type Item = &'a O;
+    type Item = (K, &'a O);
     
     fn next(&mut self) -> Option<Self::Item> {
-        // CollexIter 产出 &Pair<K, O>，我们映射出 &O
-        self.inner.next().map(|pair| &pair.1)
+        self.inner.next().map(|pair| (pair.0, &pair.1))
     }
     
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -265,11 +264,10 @@ where
     O: Collexetable<T>,
     T: FieldValue,
 {
-    type Item = O;
+    type Item = (K, O);
     
     fn next(&mut self) -> Option<Self::Item> {
-        // CollexIntoIter 产出 Pair<K, O>，我们映射出 O
-        self.inner.next().map(|pair| pair.1)
+        self.inner.next().map(|pair| (pair.0, pair.1))
     }
     
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -277,7 +275,7 @@ where
     }
 }
 
-pub struct Keys<'a, K: id_map::Id, O: field_collex::Collexetable<T>, T: field_collex::FieldValue> {
+pub struct Keys<'a, K: Id, O: Collexetable<T>, T: FieldValue> {
     inner: CollexIter<'a, Pair<K, O>, T>,
 }
 
@@ -300,7 +298,7 @@ where
     O: Collexetable<T>,
     T: FieldValue,
 {
-    type Item = &'a O;
+    type Item = (K, &'a O);
     type IntoIter = Iter<'a, K, O, T>;
     
     fn into_iter(self) -> Self::IntoIter {
@@ -314,7 +312,7 @@ where
     O: Collexetable<T>,
     T: FieldValue,
 {
-    type Item = O;
+    type Item = (K, O);
     type IntoIter = IntoIter<K, O, T>;
     
     fn into_iter(self) -> Self::IntoIter {
