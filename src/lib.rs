@@ -3,7 +3,6 @@ pub mod pair;
 pub mod id_map;
 pub mod deser;
 
-use std::mem;
 pub use id_map::*;
 pub use pair::*;
 
