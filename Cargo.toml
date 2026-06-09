@@ -7,7 +7,8 @@ description = "自用 field-collex 可序列化K-V封装"
 repository = "https://github.com/Milk-COCO/obj-alloc"
 
 [dependencies]
-field-collex = "0.0.12"
+# field-collex = { path = "../field-collex" }
+field-collex = "0.0.13"
 span-core = "0.1.1"
 serde = "^1.0"
 serde_json = "^1.0"
