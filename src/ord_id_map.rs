@@ -232,11 +232,11 @@ where
         }
     }
 
-    pub fn try_modify<F, R>(&mut self, id: K, f: F) -> Result<R, ()>
+    pub fn try_modify<F, R>(&mut self, id: K, f: F) -> Result<R, ModifyError<(R, V), ()>>
     where
         F: FnOnce(&mut E) -> R,
     {
-        let v = *self.id_map.get(id).ok_or(())?;
+        let v = *self.id_map.get(id).ok_or(ModifyError::NotFound)?;
 
         match self.collex.try_modify(&v, |pair| {
             let r = f(&mut pair.1);
@@ -249,7 +249,7 @@ where
                 }
                 Ok(r)
             }
-            Err(()) => Err(()),
+            Err(err) => Err(err),
         }
     }
 }
