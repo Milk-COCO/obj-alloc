@@ -157,17 +157,6 @@ where
         }
     }
 
-    /// 创建用于单调递增时间线查找的游标。
-    /// beat 非递减的前提下，每次 `step()` 只需 O(1) 推进。
-    pub fn cursor(&self) -> CollexCursor<Pair<K, E>, V> {
-        CollexCursor::new(&self.collex)
-    }
-
-    /// 从已保存的位置恢复游标（用于跨帧缓存）
-    pub fn cursor_from(&self, pos: Option<(usize, usize)>) -> CollexCursor<Pair<K, E>, V> {
-        CollexCursor::from_pos(&self.collex, pos)
-    }
-
     pub fn try_extend(&mut self, vec: Vec<E>) -> (Vec<K>, Vec<E>) {
         let mut accepted = Vec::with_capacity(vec.len());
         let mut rejected = Vec::new();
