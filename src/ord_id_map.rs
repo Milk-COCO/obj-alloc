@@ -6,15 +6,12 @@ use field_collex::collex::{CollexCursor, ModifyError, iter::{Iter as CollexIter,
 use crate::{Id, IdMap, Pair};
 
 #[derive(Debug, Clone)]
-#[derive(serde::Serialize)]
-#[serde(transparent)]
 pub struct OrdIdMap<K,O,T>
 where
     K: Id,
     O: Collexetable<T>,
     T: FieldValue,
 {
-    #[serde(skip)]
     pub id_map: IdMap<K,T>,
     pub collex: Collex<Pair<K,O>,T>
 }

@@ -209,6 +209,16 @@ impl<K: Id, V> IdMap<K, V> {
     pub fn max_id(&self) -> K {
         K::from_u64(self.max_id)
     }
+
+    /// 把发号水位抬到至少 `v`（只升不降）。
+    ///
+    /// 加载时用来恢复落盘的水位（`OrdIdMap` 反序列化末尾调用）：水位必须
+    /// 独立于存活元素，否则删掉最大号后重载会发号出撞车的 id。
+    pub fn bump_max_id_to(&mut self, v: u64) {
+        if v > self.max_id {
+            self.max_id = v;
+        }
+    }
     
     /// 获取元素数量
     pub fn len(&self) -> usize {
@@ -226,13 +236,23 @@ impl<K: Id, V> IdMap<K, V> {
     }
 }
 
+/// 落盘形状：`{"max_id": N, "items": {...}}`。
+///
+/// why 记水位：`max_id` 是**发号水位**，不是派生量。删除元素不动水位
+/// （见 `remove`/`clear`），所以"存活 id 的最大值"永远 ≤ 历史水位。反序列化
+/// 若只按 `items` 重建（`keys().max()`），删掉最大号后重载水位就会回退 ⇒ 新
+/// 元素复用已删除过的 id ⇒ 指向旧 id 的残留引用静默改指新对象。
+/// 记水位是"id 永不复用"这条不变式的唯一保证，而 undo/快照要靠它。
 impl<K: Id, V: Serialize> Serialize for IdMap<K, V> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        // 直接序列化内部的 HashMap，就像 IdMap 不存在一样
-        self.inner.serialize(serializer)
+        use serde::ser::SerializeStruct;
+        let mut st = serializer.serialize_struct("IdMap", 2)?;
+        st.serialize_field("max_id", &self.max_id)?;
+        st.serialize_field("items", &self.inner)?;
+        st.end()
     }
 }
 
@@ -241,12 +261,25 @@ impl<'de, K: Id, V: Deserialize<'de>> Deserialize<'de> for IdMap<K, V> {
     where
         D: Deserializer<'de>,
     {
-        let inner: HashMap<u64, V> = HashMap::deserialize(deserializer)?;
-        
-        let max_id = inner.keys().copied().max().unwrap_or(0);
-        
+        #[derive(Deserialize)]
+        struct Repr<V> {
+            max_id: u64,
+            items: HashMap<u64, V>,
+        }
+        let repr = Repr::<V>::deserialize(deserializer)?;
+
+        // 水位至少覆盖所有存活 id：容忍手工编辑/跨版本写入的偏低水位，
+        // 否则一个偏小的 max_id 会立刻发号出撞车的 id。
+        let max_id = repr
+            .items
+            .keys()
+            .copied()
+            .max()
+            .unwrap_or(0)
+            .max(repr.max_id);
+
         Ok(IdMap {
-            inner,
+            inner: repr.items,
             max_id,
             _marker: PhantomData,
         })
