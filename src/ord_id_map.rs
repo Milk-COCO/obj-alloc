@@ -39,6 +39,46 @@ where
     }
 }
 
+/// 相等 = **按排序键顺序，元素 id 与载荷都相同**。`id_map` 与 `max_id` 都**不参与**。
+///
+/// ## 为什么不能 derive，也不能只比 `id_map`
+///
+/// `OrdIdMap` 的两个字段都不是"内容"本身：
+/// - `id_map: IdMap<K, T>` 只存 **id → 排序键**，**不含载荷**。只比它会把
+///   "同 id 同排序键、载荷不同"判成相等 —— 那是**假阳性**，比"判成不等"危险得多
+///   （撤销会以为谱面没变而跳过还原）
+/// - `collex` 里的 `Slot { prev, next, values }` 是**链表布局**，`Vec` 里可能留着
+///   删除后的空洞。derive `Collex` 会去比**容量/空洞位置**，那是历史而非内容
+///
+/// 真正的内容是 `collex` 按排序键迭代出的 `Pair<K, O>` 序列（含 id、载荷与
+/// 相对顺序）。故手写实现：比迭代序列，长度不同立刻不等。
+///
+/// `id_map` 被排除还带来一个好处：它与 `collex` 若失配（外部直接改 `pub` 字段、
+/// 从旧版本反序列化恢复），这里仍按**内容**判定，不会把一次数据损坏误报成
+/// "内容变了"，也不会掩盖它。
+impl<K, E, V> PartialEq for OrdIdMap<K, E, V>
+where
+    K: Id + PartialEq,
+    E: Collexetable<V> + PartialEq,
+    V: FieldValue,
+{
+    fn eq(&self, other: &Self) -> bool {
+        let mut a = self.collex.iter();
+        let mut b = other.collex.iter();
+        loop {
+            match (a.next(), b.next()) {
+                (None, None) => return true,
+                (Some(x), Some(y)) => {
+                    if x != y {
+                        return false;
+                    }
+                }
+                _ => return false,
+            }
+        }
+    }
+}
+
 // ==================== 构造方法（需要 ConstUnit） ====================
 
 impl<K, E, V> Default for OrdIdMap<K, E, V>
@@ -332,5 +372,123 @@ where
         IntoIter {
             inner: self.collex.into_iter(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::DefaultId;
+
+    /// 最小可排序载荷：一个排序键。`Collexetable` 只需这三个方法。
+    ///
+    /// 排序键用 `i64` 而不是浮点：`FieldValue` 只对整数实现（`NumOps`+`Zero`+`Ord`），
+    /// 浮点还得先解决 NaN 的相等语义才能进 `Ord`。
+    #[derive(Debug, Clone, PartialEq)]
+    struct Elem {
+        at: i64,
+        tag: u8,
+    }
+
+    impl Collexetable<i64> for Elem {
+        fn collexate(&self) -> i64 {
+            self.at
+        }
+        fn collexate_ref(&self) -> &i64 {
+            &self.at
+        }
+        fn collexate_mut(&mut self) -> &mut i64 {
+            &mut self.at
+        }
+    }
+
+    fn el(at: i64, tag: u8) -> Elem {
+        Elem { at, tag }
+    }
+
+    /// 相等**必须看载荷**。
+    ///
+    /// 这条是回归网：`OrdIdMap.id_map` 只存 `id → 排序键`、**不含载荷**，
+    /// 曾经有一版实现只比 `id_map`，于是"同 id 同排序键、`tag` 不同"的两个
+    /// map 被判成**相等**。对撤销栈来说那是假阳性 ⇒ 会以为谱面没改而跳过还原。
+    #[test]
+    fn eq_compares_the_payload_not_just_the_sort_key() {
+        let mut a = OrdIdMap::<DefaultId, Elem, i64>::new();
+        a.insert(el(1, 10)).unwrap();
+
+        // 同 id、同排序键，**只有载荷不同**
+        let mut b = OrdIdMap::<DefaultId, Elem, i64>::new();
+        b.insert(el(1, 11)).unwrap();
+        assert_eq!(
+            a.id_map, b.id_map,
+            "前提：两者的 id_map（id→排序键）完全相同"
+        );
+        assert!(a != b, "载荷不同必须判不等（否则是假阳性，会跳过撤销还原）");
+
+        // 载荷相同则相等
+        let mut c = OrdIdMap::<DefaultId, Elem, i64>::new();
+        c.insert(el(1, 10)).unwrap();
+        assert!(a == c);
+    }
+
+    /// 相等 = **按排序键顺序，id 与载荷都相同** ⇒ 顺序不同即不等。
+    #[test]
+    fn eq_respects_the_collex_order() {
+        let mut a = OrdIdMap::<DefaultId, Elem, i64>::new();
+        a.insert(el(1, 10)).unwrap();
+        a.insert(el(2, 20)).unwrap();
+
+        // 同样的 (id, 载荷) 配对，但插入顺序不同 ⇒ 迭代出的 id 序列不同
+        let mut b = OrdIdMap::<DefaultId, Elem, i64>::new();
+        b.insert(el(2, 20)).unwrap();
+        b.insert(el(1, 10)).unwrap();
+        let ids_a: Vec<_> = a.iter().map(|p| p.0).collect();
+        let ids_b: Vec<_> = b.iter().map(|p| p.0).collect();
+        assert_ne!(ids_a, ids_b, "前提：两者迭代出的 id 顺序确实不同");
+        assert!(a != b, "顺序不同应判不等");
+
+        // 但**内容集合**相同（只是发号顺序不同）—— 这是"id 是身份"的必然结果，
+        // 记在这里提醒：跨会话重建的谱面 id 可能不同，不要指望 PartialEq 能判等
+        assert_eq!(a.len(), b.len());
+    }
+
+    /// `id_map` 是派生索引：把它弄坏（清空）**不影响**相等判定。
+    ///
+    /// 理由：`OrdIdMap` 的载荷只存在 `collex` 里，`id_map` 丢了还能从
+    /// `collex` 重建（`rebuild` 路径）。若相等性依赖它，一次索引失配会被
+    /// 误报成"内容变了"。
+    #[test]
+    fn eq_ignores_the_derived_id_map_index() {
+        let mut a = OrdIdMap::<DefaultId, Elem, i64>::new();
+        a.insert(el(1, 10)).unwrap();
+        a.insert(el(2, 20)).unwrap();
+
+        let mut b = OrdIdMap::<DefaultId, Elem, i64>::new();
+        b.insert(el(1, 10)).unwrap();
+        b.insert(el(2, 20)).unwrap();
+        assert!(a == b);
+
+        b.id_map = IdMap::new(); // 人为失配
+        assert!(b.id_map.is_empty(), "前提：id_map 确实被清空");
+        assert!(a == b, "id_map 是派生索引，不该影响相等判定");
+    }
+
+    /// 删掉最大号再重插，水位升高但存活元素相同 ⇒ 判相等。
+    #[test]
+    fn eq_ignores_the_max_id_watermark() {
+        let mut a = OrdIdMap::<DefaultId, Elem, i64>::new();
+        a.insert(el(1, 10)).unwrap();
+
+        let mut b = OrdIdMap::<DefaultId, Elem, i64>::new();
+        b.insert(el(1, 10)).unwrap();
+        let tmp = b.insert(el(9, 99)).unwrap();
+        b.remove(tmp).unwrap();
+        assert!(a == b, "水位更高但存活元素相同，必须判相等");
+
+        // 元素个数不同 ⇒ 不等
+        let mut d = OrdIdMap::<DefaultId, Elem, i64>::new();
+        d.insert(el(1, 10)).unwrap();
+        d.insert(el(2, 20)).unwrap();
+        assert!(a != d, "存活元素个数不同，应判不等");
     }
 }

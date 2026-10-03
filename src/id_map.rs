@@ -236,6 +236,21 @@ impl<K: Id, V> IdMap<K, V> {
     }
 }
 
+/// 相等 = **存活元素集相同**，`max_id` 水位**不参与**。
+///
+/// why 忽略水位：水位是**发号计数器**，不是内容。删元素不动水位（见
+/// `remove`/`clear`），所以"内容完全一样但水位不同"是常态 —— 删掉一个元素、
+/// 撤销回去，水位比原来高，内容逐字节相同。若把水位算进相等，编辑器就会把
+/// 这种谱面判成"改过了"，进而在撤销的陈旧校验里误报冲突、拒绝一次本该
+/// 成功的还原。
+///
+/// 这个语义也是 `OrdIdMap`/`Nexus` 那条"水位与索引一律排除"规则的源头。
+impl<K: Id, V: PartialEq> PartialEq for IdMap<K, V> {
+    fn eq(&self, other: &Self) -> bool {
+        self.inner == other.inner
+    }
+}
+
 /// 落盘形状：`{"max_id": N, "items": {...}}`。
 ///
 /// why 记水位：`max_id` 是**发号水位**，不是派生量。删除元素不动水位
@@ -357,7 +372,43 @@ impl<K: Id, V> IndexMut<K> for IdMap<K, V> {
 mod tests {
     use super::*;
     use serde_json;
-    
+
+    /// `PartialEq` 忽略 `max_id` 水位：删一个再插一个，内容相同但水位更高，
+    /// 必须判相等 —— 否则编辑器撤销栈的陈旧校验会把一次本该成功的还原
+    /// 误判成"别人改过"。
+    #[test]
+    fn eq_ignores_the_max_id_watermark() {
+        let mut a = IdMap::new();
+        a.insert("x");
+        let mut b = IdMap::new();
+        b.insert("x");
+        assert!(a == b, "内容相同应相等");
+
+        // b 多插一个再删掉：水位升高、内容回到与 a 相同
+        let tmp = b.insert("gone");
+        assert!(a != b, "b 多一个元素时应不等");
+        b.remove(tmp);
+        assert!(
+            b.max_id().as_u64() > a.max_id().as_u64(),
+            "前提：水位确实更高了"
+        );
+        assert!(a == b, "水位不同但存活元素相同，必须判相等");
+    }
+
+    #[test]
+    fn eq_compares_live_elements_not_bulk() {
+        let mut a = IdMap::new();
+        a.insert("x");
+        let mut b = IdMap::new();
+        b.insert("y");
+        assert!(a != b);
+        let y = b.remove(DefaultId(1)).unwrap();
+        assert_eq!(y, "y");
+        assert!(a != b, "key 不同即使值相同也不是同一个元素");
+        b.insert("x");
+        assert!(a != b, "key 0 与 key 1 是不同身份，不因值相同而相等");
+    }
+
     // 测试默认 Id + 自动递增生成
     #[test]
     fn test_default_id_auto_generate() {
