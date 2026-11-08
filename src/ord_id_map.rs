@@ -186,6 +186,52 @@ where
         }
     }
 
+    /// 按排序键定位：`(prev, current, next, cursor)`。
+    ///
+    /// - `prev`：最后一个排序键 `< value` 的元素；
+    /// - `current`：排序键 `== value` 的元素；
+    /// - `next`：第一个排序键 `> value` 的元素；
+    /// - `cursor`：指向第一个排序键 `>= value` 的元素（`current` 或 `next`），空集合为 `None`。
+    ///
+    /// 复杂度：槽位下标是 `value / unit` 的算术定位，槽内至多一次二分 —— **与元素总数无关**。
+    ///
+    /// ## 游标怎么用
+    ///
+    /// 游标是"记住这次找到了哪"的把手，配 [`Self::step`] 做**同一批查询里的顺序推进**
+    /// （遍历一段区间：先 `find(lo)` 播种，再对每个已读到的排序键调 `step`）。
+    ///
+    /// ⚠️ **不要跨"集合被改动"复用它**：位置是 `(槽下标, 槽内下标)`，往同一个槽插入会让
+    /// 槽内下标整体后移、删除可能合并槽。游标只在一次遍历内可靠；每次遍历重新 `find`。
+    pub fn find(
+        &self,
+        value: &V,
+    ) -> (
+        Option<&Pair<K, E>>,
+        Option<&Pair<K, E>>,
+        Option<&Pair<K, E>>,
+        Option<CollexCursor>,
+    ) {
+        self.collex.find(value)
+    }
+
+    /// 从游标当前位置推进到 `value`，返回 `(prev, current, next)`，语义同 [`Self::find`]。
+    ///
+    /// 推进后游标停在找到的位置（写回 `cursor.pos`），所以顺序遍历一段区间时，
+    /// 每次只从**上一个元素**往前走一格，而不是每次从集合起点重新定位。
+    ///
+    /// 游标的复用边界见 [`Self::find`] 的文档。
+    pub fn step<'a>(
+        &'a self,
+        cursor: &mut CollexCursor,
+        value: &V,
+    ) -> (
+        Option<&'a Pair<K, E>>,
+        Option<&'a Pair<K, E>>,
+        Option<&'a Pair<K, E>>,
+    ) {
+        self.collex.step(cursor, value)
+    }
+
     pub fn extend(&mut self, vec: Vec<E>) {
         for elem in vec {
             let v = elem.collexate();
@@ -490,5 +536,54 @@ mod tests {
         d.insert(el(1, 10)).unwrap();
         d.insert(el(2, 20)).unwrap();
         assert!(a != d, "存活元素个数不同，应判不等");
+    }
+
+    /// ⭐ 游标版区间遍历：`find` 播种 + `step` 前进，产出必须与"全量迭代再过滤"一致。
+    ///
+    /// 这是 `vault-chart::KeyLane::keys_between` 依赖的语义：`step(cursor, 上一颗的键)`
+    /// 返回的 `next` 恰好是"第一个比它大的元素"，所以按顺序推进不重不漏。
+    #[test]
+    fn find_and_step_walk_a_range_in_the_same_order_as_a_full_iteration() {
+        let mut m = OrdIdMap::<DefaultId, Elem, i64>::new();
+        for at in [0i64, 2, 4, 5, 9, 12] {
+            m.insert(el(at, at as u8)).unwrap();
+        }
+
+        // 起点：第一个 >= 4；游标也落在它上面。
+        let (prev, cur, next, mut cursor) = m.find(&4);
+        assert_eq!(prev.map(|p| p.at), Some(2), "prev 是最后一个 < 4 的");
+        assert_eq!(cur.map(|p| p.at), Some(4), "current 恰好命中");
+        assert_eq!(next.map(|p| p.at), Some(5), "next 是第一个 > 4 的");
+        let mut cursor = cursor.expect("非空集合必有游标");
+
+        // 从 4 开始按 step 前进，直到 9（含）——与过滤全量迭代的结果比对。
+        let mut walked = vec![cur.unwrap().at];
+        loop {
+            let last = *walked.last().expect("非空");
+            let (_, same, nxt) = m.step(&mut cursor, &last);
+            assert_eq!(same.map(|p| p.at), Some(last), "step 先定位到 value 本身");
+            let Some(n) = nxt else { break };
+            if n.at > 9 {
+                break;
+            }
+            walked.push(n.at);
+        }
+        let want: Vec<i64> = m
+            .iter()
+            .map(|(_, e)| e.at)
+            .filter(|a| (4..=9).contains(a))
+            .collect();
+        assert_eq!(walked, want, "游标遍历与全量过滤必须一致");
+
+        // 起点未命中时（3 落在空档）：current 为 None，next 是第一个 > 3。
+        let (_, cur, next, _) = m.find(&3);
+        assert!(cur.is_none(), "没有恰好等于 3 的元素");
+        assert_eq!(next.map(|p| p.at), Some(4), "next 是第一个 > 3 的");
+
+        // 空集合：三个位置都空、游标为 None。
+        let empty = OrdIdMap::<DefaultId, Elem, i64>::new();
+        let (prev, cur, next, cursor) = empty.find(&0);
+        assert!(prev.is_none() && cur.is_none() && next.is_none());
+        assert!(cursor.is_none(), "空集合没有游标");
     }
 }
