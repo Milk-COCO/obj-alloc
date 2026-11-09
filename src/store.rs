@@ -23,8 +23,6 @@
 //! BTreeMap 版直接用 `range` 表达这些语义；游标在它这里只是"记住查过的值"，
 //! 每次 `step` 仍然是一次 `O(log n)` 的 range 定位（`Collex` 那边是槽内推进）。
 
-use field_collex::{Collexetable, FieldValue};
-
 pub use field_collex::collex::ModifyError;
 
 /// 有序容器（默认 `Collex`；`store-btreemap` 时是 [`BTreeStore`]）。
@@ -59,7 +57,8 @@ pub type StoreIntoIter<E, V> = std::collections::btree_map::IntoValues<V, E>;
 
 #[cfg(feature = "store-btreemap")]
 mod btree {
-    use super::{Collexetable, FieldValue, ModifyError};
+    use field_collex::{Collexetable, FieldValue};
+    use super::ModifyError;
     use std::collections::BTreeMap;
 
     /// `Collex` 的 BTreeMap 替身：`排序键 → 元素`，键唯一、拒绝负键。
@@ -324,6 +323,7 @@ mod btree {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use field_collex::Collexetable;
 
     #[derive(Debug, Clone, PartialEq, serde::Serialize)]
     struct Elem {
