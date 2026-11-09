@@ -11,3 +11,12 @@ field-collex = { path = "../field-collex" }
 #field-collex = "0.1.0"
 serde = "^1.0"
 serde_json = "^1.0"
+
+[features]
+default = []
+# 有序存储换成 `BTreeMap`（默认走 `field_collex::Collex`）。
+#
+# 只影响 [`ord_id_map::OrdIdMap`] 内部那个有序容器；对外 API（`find_le` / `find` /
+# `step` / `iter` / `modify` …）逐字相同，所以上层零改动 —— 用来做
+# "Collex vs BTreeMap 在真实谱面上谁快"的对比。
+store-btreemap = []

@@ -1,8 +1,9 @@
 
 
 use std::ops::{Deref, DerefMut};
-use field_collex::{Collexetable, ConstUnit, Collex, FieldValue};
-use field_collex::collex::{CollexCursor, ModifyError, iter::{Iter as CollexIter, IntoIter as CollexIntoIter}};
+use field_collex::{Collexetable, ConstUnit, FieldValue};
+use field_collex::collex::ModifyError;
+use crate::store::{Cursor, Store, StoreIntoIter, StoreIter};
 use crate::{Id, IdMap, Pair};
 
 #[derive(Debug, Clone)]
@@ -13,7 +14,7 @@ where
     T: FieldValue,
 {
     pub id_map: IdMap<K,T>,
-    pub collex: Collex<Pair<K,O>,T>
+    pub store: crate::store::Store<Pair<K,O>,T>
 }
 
 impl<K,E,V> Deref for OrdIdMap<K,E,V>
@@ -22,9 +23,9 @@ where
     E: Collexetable<V>,
     V: FieldValue,
 {
-    type Target = Collex<Pair<K,E>,V>;
+    type Target = crate::store::Store<Pair<K,E>,V>;
     fn deref(&self) -> &Self::Target {
-        &self.collex
+        &self.store
     }
 }
 
@@ -35,7 +36,7 @@ where
     V: FieldValue,
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.collex
+        &mut self.store
     }
 }
 
@@ -63,8 +64,8 @@ where
     V: FieldValue,
 {
     fn eq(&self, other: &Self) -> bool {
-        let mut a = self.collex.iter();
-        let mut b = other.collex.iter();
+        let mut a = self.store.iter();
+        let mut b = other.store.iter();
         loop {
             match (a.next(), b.next()) {
                 (None, None) => return true,
@@ -101,26 +102,27 @@ where
     pub fn new() -> Self {
         Self {
             id_map: IdMap::with_id(),
-            collex: Collex::new(),
+            store: Store::new(),
         }
     }
 
     pub fn with_capacity(capacity: usize) -> Self {
+        let _ = capacity;
         Self {
             id_map: IdMap::with_id_capacity(capacity),
-            collex: Collex::new(),
+            store: Store::new(),
         }
     }
 
     pub fn with_elements(vec: Vec<E>) -> Self {
         let mut id_map = IdMap::with_id();
-        let mut collex = Collex::new();
+        let mut store = Store::new();
         for elem in vec {
             let v = elem.collexate();
             let id = id_map.insert(v);
-            collex.insert(Pair(id, elem)).ok();
+            store.insert(Pair(id, elem)).ok();
         }
-        Self { id_map, collex }
+        Self { id_map, store }
     }
 }
 
@@ -135,7 +137,7 @@ where
     pub fn insert(&mut self, elem: E) -> Result<K, E> {
         let v = elem.collexate();
         let id = self.id_map.insert(v);
-        match self.collex.insert(Pair(id, elem)) {
+        match self.store.insert(Pair(id, elem)) {
             Ok(()) => Ok(id),
             Err(pair) => {
                 self.id_map.remove(id);
@@ -150,19 +152,19 @@ where
 
         // 如果替换了旧值，从 collex 中移除旧元素
         let old_elem = if let Some(ref old_v) = old_v {
-            self.collex.remove(old_v).ok().map(|pair| pair.1)
+            self.store.remove(old_v).ok().map(|pair| pair.1)
         } else {
             None
         };
 
-        match self.collex.insert(Pair(id, elem)) {
+        match self.store.insert(Pair(id, elem)) {
             Ok(()) => Ok(old_elem),
             Err(pair) => {
                 // 回滚：恢复旧元素
                 if let Some(old_elem) = old_elem {
                     let old_v = old_elem.collexate();
                     self.id_map.insert_with_id(id, old_v);
-                    self.collex.insert(Pair(id, old_elem)).ok();
+                    self.store.insert(Pair(id, old_elem)).ok();
                 } else {
                     self.id_map.remove(id);
                 }
@@ -173,12 +175,12 @@ where
 
     pub fn remove(&mut self, id: K) -> Option<E> {
         let v = self.id_map.remove(id)?;
-        self.collex.remove(&v).ok().map(|pair| pair.1)
+        self.store.remove(&v).ok().map(|pair| pair.1)
     }
 
     pub fn get_with_id(&self, id: K) -> Option<&E> {
         let v = self.id_map.get(id)?;
-        let pair = self.collex.find_ge(v)?;
+        let pair = self.store.find_ge(v)?;
         if pair.collexate_ref() == v {
             Some(&pair.1)
         } else {
@@ -209,9 +211,9 @@ where
         Option<&Pair<K, E>>,
         Option<&Pair<K, E>>,
         Option<&Pair<K, E>>,
-        Option<CollexCursor>,
+        Option<Cursor>,
     ) {
-        self.collex.find(value)
+        self.store.find(value)
     }
 
     /// 从游标当前位置推进到 `value`，返回 `(prev, current, next)`，语义同 [`Self::find`]。
@@ -222,21 +224,21 @@ where
     /// 游标的复用边界见 [`Self::find`] 的文档。
     pub fn step<'a>(
         &'a self,
-        cursor: &mut CollexCursor,
+        cursor: &mut Cursor,
         value: &V,
     ) -> (
         Option<&'a Pair<K, E>>,
         Option<&'a Pair<K, E>>,
         Option<&'a Pair<K, E>>,
     ) {
-        self.collex.step(cursor, value)
+        self.store.step(cursor, value)
     }
 
     pub fn extend(&mut self, vec: Vec<E>) {
         for elem in vec {
             let v = elem.collexate();
             let id = self.id_map.insert(v);
-            self.collex.insert(Pair(id, elem)).ok();
+            self.store.insert(Pair(id, elem)).ok();
         }
     }
 
@@ -246,7 +248,7 @@ where
         for elem in vec {
             let v = elem.collexate();
             let id = self.id_map.insert(v);
-            match self.collex.insert(Pair(id, elem)) {
+            match self.store.insert(Pair(id, elem)) {
                 Ok(()) => accepted.push(id),
                 Err(pair) => {
                     self.id_map.remove(id);
@@ -257,12 +259,12 @@ where
         (accepted, rejected)
     }
 
-    pub fn into_raw_parts(self) -> (IdMap<K,V>, Collex<Pair<K,E>,V>) {
-        (self.id_map, self.collex)
+    pub fn into_raw_parts(self) -> (IdMap<K,V>, Store<Pair<K,E>,V>) {
+        (self.id_map, self.store)
     }
 
-    pub fn from_raw_parts(id_map: IdMap<K,V>, collex: Collex<Pair<K,E>,V>) -> Self {
-        Self { id_map, collex }
+    pub fn from_raw_parts(id_map: IdMap<K,V>, store: Store<Pair<K,E>,V>) -> Self {
+        Self { id_map, store }
     }
 
     pub fn modify<F, R>(&mut self, id: K, f: F) -> Result<R, ModifyError<R, E>>
@@ -271,7 +273,7 @@ where
     {
         let v = *self.id_map.get(id).ok_or(ModifyError::NotFound)?;
 
-        match self.collex.modify(&v, |pair| {
+        match self.store.modify(&v, |pair| {
             let r = f(&mut pair.1);
             (r, pair.collexate())
         }) {
@@ -293,7 +295,7 @@ where
         F: FnOnce(&mut E) -> R,
         V: Copy + PartialEq,
     {
-        match self.collex.modify(value, |pair| {
+        match self.store.modify(value, |pair| {
             let r = f(&mut pair.1);
             let new_v = *pair.collexate_ref();
             (r, new_v)
@@ -310,7 +312,7 @@ where
     {
         let v = *self.id_map.get(id).ok_or(ModifyError::NotFound)?;
 
-        match self.collex.try_modify(&v, |pair| {
+        match self.store.try_modify(&v, |pair| {
             let r = f(&mut pair.1);
             (r, pair.collexate())
         }) {
@@ -332,7 +334,7 @@ where
     O: Collexetable<T>,
     T: FieldValue,
 {
-    inner: CollexIter<'a, Pair<K, O>, T>,
+    inner: StoreIter<'a, Pair<K, O>, T>,
 }
 
 impl<'a, K, O, T> Iterator for Iter<'a, K, O, T>
@@ -358,7 +360,7 @@ where
     O: Collexetable<T>,
     T: FieldValue,
 {
-    inner: CollexIntoIter<Pair<K, O>, T>,
+    inner: StoreIntoIter<Pair<K, O>, T>,
 }
 
 impl<K, O, T> Iterator for IntoIter<K, O, T>
@@ -386,7 +388,7 @@ where
 {
     pub fn iter(&self) -> Iter<'_, K, O, T> {
         Iter {
-            inner: self.collex.iter(),
+            inner: self.store.iter(),
         }
     }
 }
@@ -416,7 +418,7 @@ where
 
     fn into_iter(self) -> Self::IntoIter {
         IntoIter {
-            inner: self.collex.into_iter(),
+            inner: self.store.into_iter(),
         }
     }
 }

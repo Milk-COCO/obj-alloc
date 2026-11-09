@@ -1,7 +1,8 @@
-use field_collex::{Collexetable, ConstUnit, Collex, FieldValue};
+use field_collex::{Collexetable, ConstUnit, FieldValue};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use crate::{Id, IdMap, OrdIdMap};
 use crate::pair::Pair;
+use crate::store::Store;
 
 /// 落盘形状：`{"max_id": N, "items": [[id, elem], ...]}`。
 ///
@@ -20,7 +21,7 @@ where
         use serde::ser::SerializeStruct;
         let mut st = serializer.serialize_struct("OrdIdMap", 2)?;
         st.serialize_field("max_id", &self.id_map.max_id())?;
-        st.serialize_field("items", &self.collex)?;
+        st.serialize_field("items", &self.store)?;
         st.end()
     }
 }
@@ -46,17 +47,17 @@ where
         // 先灌存活元素：`insert_with_id` 只会抬高水位，不会压低，
         // 随后显式抬到落盘水位即可（不低于任何存活 id）。
         let mut id_map = IdMap::<K, T>::with_id_capacity(repr.items.len());
-        let mut collex = Collex::new();
+        let mut store = Store::new();
 
         for pair in repr.items {
             let obj_id = pair.0;
             let t_value = pair.1.collexate();
             id_map.insert_with_id(obj_id, t_value);
-            collex.insert(pair).ok();
+            store.insert(pair).ok();
         }
         id_map.bump_max_id_to(repr.max_id);
 
-        Ok(Self { id_map, collex })
+        Ok(Self { id_map, store })
     }
 }
 
@@ -72,14 +73,14 @@ mod tests {
     pub struct TestO(pub u32);
 
     fn oid(v: u32) -> OrdIdMap<DefaultId, TestO, TestT> {
-        let mut collex = Collex::new();
+        let mut store = Store::new();
         let mut id_map = IdMap::<DefaultId, TestT>::with_id_capacity(0);
         for i in 1..=v {
             let pair = Pair(DefaultId(i as u64), TestO(i * 10));
             id_map.insert_with_id(pair.0, pair.1.collexate());
-            collex.insert(pair).ok();
+            store.insert(pair).ok();
         }
-        OrdIdMap { id_map, collex }
+        OrdIdMap { id_map, store }
     }
     pub type TestT = u32;
     impl Collexetable<TestT> for TestO {
@@ -97,10 +98,10 @@ mod tests {
             Pair(DefaultId(3), TestO(30)),
         ];
 
-        // 构造 Collex
-        let mut collex = Collex::new();
+        // 构造有序存储
+        let mut store = Store::new();
         for pair in &elements {
-            collex.insert(pair.clone()).ok();
+            store.insert(pair.clone()).ok();
         }
 
         // 构造 IdMap（手动插入与 elements 匹配的 Id/T）
@@ -108,7 +109,7 @@ mod tests {
         for obj in &elements {
             id_map.insert_with_id(obj.0, obj.1.collexate());
         }
-        let original = OrdIdMap { id_map, collex };
+        let original = OrdIdMap { id_map, store };
 
         // 序列化
         let json = serde_json::to_string(&original).expect("序列化失败");
@@ -119,10 +120,9 @@ mod tests {
             .expect("反序列化失败");
 
         // 验证一致性
-        let (id_map, collex) = deserialized.into_raw_parts();
-        assert_eq!(collex.unit(), &1u32);
+        let (id_map, store) = deserialized.into_raw_parts();
         assert_eq!(
-            collex.into_iter().collect::<Vec<Pair<DefaultId, TestO>>>(),
+            store.into_iter().collect::<Vec<Pair<DefaultId, TestO>>>(),
             elements
         );
         for obj in &elements {
@@ -189,16 +189,16 @@ mod tests {
     /// 边界测试：空元素场景
     #[test]
     fn test_obj_allocator_serde_empty() {
-        let collex = Collex::<Pair<DefaultId, TestO>, TestT>::new();
+        let store = Store::<Pair<DefaultId, TestO>, TestT>::new();
         let original: OrdIdMap<DefaultId, TestO, TestT> = OrdIdMap {
             id_map: IdMap::with_capacity(0),
-            collex,
+            store,
         };
 
         let json = serde_json::to_string(&original).unwrap();
         let deserialized: OrdIdMap<DefaultId, TestO, TestT> = serde_json::from_str(&json).unwrap();
 
-        assert!(deserialized.collex.is_empty());
+        assert!(deserialized.store.is_empty());
         assert!(deserialized.id_map.inner.is_empty());
     }
 }
