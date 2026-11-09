@@ -8,4 +8,4 @@ pub mod store;
 pub use ord_id_map::*;
 pub use id_map::*;
 pub use pair::*;
-pub use store::{Cursor, Store};
+pub use store::Store;

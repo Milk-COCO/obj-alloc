@@ -17,21 +17,21 @@
 //! * `find_le` = 最后一个 `≤ v`，`find_lt` = 最后一个 `< v`，
 //!   `find_ge` = 第一个 `≥ v`，`find_gt` = 第一个 `> v`；
 //! * `find_le_and_gt` = (`≤ v` 的最后一个, `> v` 的第一个)；
-//! * `find` = (`< v` 的最后一个, `== v`, `> v` 的第一个, 游标)；
-//! * `step` 要求查询序列**非递减**（上游就是按时间顺序查的），推进游标。
-//!
-//! BTreeMap 版直接用 `range` 表达这些语义；游标在它这里只是"记住查过的值"，
-//! 每次 `step` 仍然是一次 `O(log n)` 的 range 定位（`Collex` 那边是槽内推进）。
+//! * **`range(lo, hi)` = 区间 `[lo, hi]`（含两端；`hi = None` 上无界），按序产出
+//!   `&E`，推进 O(1)/元素**。上层要遍历一段区间一律走它 —— 用"`find_gt` 逐元素"
+//!   会退化成每元素一次定位（`BTreeMap` 上就是 O(log n)/元素，实测 3× 差距）。
 
 pub use field_collex::collex::ModifyError;
+
+/// 当前存储实现的名字（诊断/基准输出用；两档 feature 各一个值）。
+#[cfg(not(feature = "store-btreemap"))]
+pub const STORE_NAME: &str = "Collex";
+#[cfg(feature = "store-btreemap")]
+pub const STORE_NAME: &str = "BTreeMap";
 
 /// 有序容器（默认 `Collex`；`store-btreemap` 时是 [`BTreeStore`]）。
 #[cfg(not(feature = "store-btreemap"))]
 pub type Store<E, V> = field_collex::Collex<E, V>;
-
-/// 游标类型（默认 `CollexCursor`；`store-btreemap` 时是 [`BTreeCursor`]）。
-#[cfg(not(feature = "store-btreemap"))]
-pub type Cursor = field_collex::collex::CollexCursor;
 
 /// 只读迭代器（`OrdIdMap::iter` 包的是它）。
 #[cfg(not(feature = "store-btreemap"))]
@@ -41,19 +41,87 @@ pub type StoreIter<'a, E, V> = field_collex::collex::iter::Iter<'a, E, V>;
 #[cfg(not(feature = "store-btreemap"))]
 pub type StoreIntoIter<E, V> = field_collex::collex::iter::IntoIter<E, V>;
 
+/// 区间迭代器（[`range`] 的返回类型）。
+#[cfg(not(feature = "store-btreemap"))]
+pub type StoreRange<'a, E, V> = CollexRange<'a, E, V>;
+
+/// `Collex` 上的区间迭代：`find_ge(lo)` 起步，之后每次沿 `next` 链前进一格。
+///
+/// 步进用 `find_gt` 而不是游标（`find`/`step`）：`Collex::find_gt` 本身就是沿链表
+/// 走一格，O(1)；游标只在"同一批查询里复用位置"时才有额外收益，这里用不上。
+#[cfg(not(feature = "store-btreemap"))]
+pub struct CollexRange<'a, E, V>
+where
+    E: field_collex::Collexetable<V>,
+    V: field_collex::FieldValue,
+{
+    store: &'a field_collex::Collex<E, V>,
+    next: Option<&'a E>,
+    /// 上界（含）；`None` = 上无界。
+    hi: Option<V>,
+}
+
+#[cfg(not(feature = "store-btreemap"))]
+impl<'a, E, V> Iterator for CollexRange<'a, E, V>
+where
+    E: field_collex::Collexetable<V>,
+    V: field_collex::FieldValue,
+{
+    type Item = &'a E;
+
+    fn next(&mut self) -> Option<&'a E> {
+        let e = self.next?;
+        let v = *e.collexate_ref();
+        if self.hi.is_some_and(|hi| v > hi) {
+            self.next = None;
+            return None;
+        }
+        self.next = self.store.find_gt(&v);
+        Some(e)
+    }
+}
+
+/// 取 `[lo, hi]` 区间的元素（含两端；`hi = None` 上无界）。
+#[cfg(not(feature = "store-btreemap"))]
+pub fn range<'a, E, V>(
+    store: &'a field_collex::Collex<E, V>,
+    lo: &V,
+    hi: Option<&V>,
+) -> CollexRange<'a, E, V>
+where
+    E: field_collex::Collexetable<V>,
+    V: field_collex::FieldValue,
+{
+    // 负下界 ⇒ 从第一颗开始（`Collex` 只收非负键，查询负值一律 None）。
+    let first = if lo.lt(&V::zero()) {
+        store.first()
+    } else {
+        store.find_ge(lo)
+    };
+    CollexRange {
+        store,
+        next: first,
+        hi: hi.copied(),
+    }
+}
+
 // ==================== BTreeMap 版 ====================
 
 #[cfg(feature = "store-btreemap")]
-pub use btree::{BTreeCursor, BTreeStore};
+pub use btree::BTreeStore;
 
 #[cfg(feature = "store-btreemap")]
 pub type Store<E, V> = btree::BTreeStore<E, V>;
 #[cfg(feature = "store-btreemap")]
-pub type Cursor = btree::BTreeCursor;
-#[cfg(feature = "store-btreemap")]
 pub type StoreIter<'a, E, V> = std::collections::btree_map::Values<'a, V, E>;
 #[cfg(feature = "store-btreemap")]
 pub type StoreIntoIter<E, V> = std::collections::btree_map::IntoValues<V, E>;
+
+#[cfg(feature = "store-btreemap")]
+pub use btree::{BTreeRange, range};
+
+#[cfg(feature = "store-btreemap")]
+pub type StoreRange<'a, E, V> = btree::BTreeRange<'a, V, E>;
 
 #[cfg(feature = "store-btreemap")]
 mod btree {
@@ -70,11 +138,37 @@ mod btree {
         map: BTreeMap<V, E>,
     }
 
-    /// 游标：对 BTreeMap 只是"上次查到哪"，不参与定位（每次 `step` 都重新 range）。
-    #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-    pub struct BTreeCursor {
-        /// 上次 `find` / `step` 查的键。
-        last: Option<()>,
+    /// BTreeMap 上的区间迭代：直接骑 `range` 迭代器，推进 O(1)/元素。
+    ///
+    /// 有无上界都是同一个迭代器类型（`BTreeMap::range` 只吃 `RangeBounds`）。
+    pub struct BTreeRange<'a, V, E> {
+        inner: std::collections::btree_map::Range<'a, V, E>,
+    }
+
+    impl<'a, V, E> Iterator for BTreeRange<'a, V, E> {
+        type Item = &'a E;
+
+        fn next(&mut self) -> Option<&'a E> {
+            self.inner.next().map(|(_, e)| e)
+        }
+    }
+
+    /// 取 `[lo, hi]` 区间的元素（含两端；`hi = None` 上无界）。
+    pub fn range<'a, E, V>(
+        store: &'a BTreeStore<E, V>,
+        lo: &V,
+        hi: Option<&V>,
+    ) -> BTreeRange<'a, V, E>
+    where
+        V: FieldValue + Ord,
+    {
+        let bounds: (std::ops::Bound<&V>, std::ops::Bound<&V>) = match hi {
+            Some(hi) => (std::ops::Bound::Included(lo), std::ops::Bound::Included(hi)),
+            None => (std::ops::Bound::Included(lo), std::ops::Bound::Unbounded),
+        };
+        BTreeRange {
+            inner: store.map.range(bounds),
+        }
     }
 
     impl<E, V> Default for BTreeStore<E, V> {
@@ -189,55 +283,6 @@ mod btree {
                 .next()
                 .map(|(_, e)| e);
             (le, gt)
-        }
-
-        pub fn find(
-            &self,
-            value: &V,
-        ) -> (
-            Option<&E>,
-            Option<&E>,
-            Option<&E>,
-            Option<BTreeCursor>,
-        ) {
-            if value.lt(&V::zero()) {
-                let first = self.first();
-                let cursor = first.map(|_| BTreeCursor { last: Some(()) });
-                return (None, None, first, cursor);
-            }
-            let prev = self.map.range(..*value).next_back().map(|(_, e)| e);
-            let cur = self.map.get(value);
-            let next = self
-                .map
-                .range((std::ops::Bound::Excluded(*value), std::ops::Bound::Unbounded))
-                .next()
-                .map(|(_, e)| e);
-            // 与 `Collex` 一致：只有"这一点之后还有东西"时才给游标。
-            let cursor = cur.or(next).map(|_| BTreeCursor { last: Some(()) });
-            (prev, cur, next, cursor)
-        }
-
-        /// 推进游标（要求查询序列非递减）。
-        ///
-        /// BTreeMap 没有"槽内游标"可推，这里每次做 range 定位 —— 语义与
-        /// `Collex::step` 相同（`prev` 严格小于、`next` 严格大于）。
-        pub fn step<'a>(
-            &'a self,
-            cursor: &mut BTreeCursor,
-            value: &V,
-        ) -> (Option<&'a E>, Option<&'a E>, Option<&'a E>) {
-            if value.lt(&V::zero()) {
-                return (None, None, self.first());
-            }
-            let prev = self.map.range(..*value).next_back().map(|(_, e)| e);
-            let cur = self.map.get(value);
-            let next = self
-                .map
-                .range((std::ops::Bound::Excluded(*value), std::ops::Bound::Unbounded))
-                .next()
-                .map(|(_, e)| e);
-            cursor.last = Some(());
-            (prev, cur, next)
         }
 
         // ---- 修改（含"改完要搬位"的语义） ----
@@ -369,29 +414,22 @@ mod tests {
         // 负键查询一律 None（`Collex` 也只收非负）。
         assert_eq!(s.find_le(&-1).map(|e| e.tag), None);
         assert_eq!(s.find_ge(&-1).map(|e| e.tag), None);
-        assert_eq!(s.find(&-1).0, None);
-        assert_eq!(s.find(&-1).2.map(|e| e.tag), Some(20), "负键的 next 是第一个元素");
     }
 
-    /// `find` 与 `step`：`(prev, cur, next)` 且游标只在"后面还有"时给出。
+    /// `range`：含两端、按序、`hi = None` 上无界（两种实现同语义）。
     #[test]
-    fn find_and_step_advance_over_the_sequence() {
+    fn range_iterates_bounds_inclusively() {
         let s = store();
-        let (prev, cur, next, cursor) = s.find(&4);
-        assert_eq!(prev.map(|e| e.tag), Some(20));
-        assert_eq!(cur.map(|e| e.tag), Some(40));
-        assert_eq!(next.map(|e| e.tag), Some(60));
-        let mut cursor = cursor.expect("后面还有元素 ⇒ 有游标");
-
-        let (p, c, n) = s.step(&mut cursor, &4);
-        assert_eq!((p.map(|e| e.tag), c.map(|e| e.tag), n.map(|e| e.tag)), (Some(20), Some(40), Some(60)));
-        let (_, _, n) = s.step(&mut cursor, &6);
-        assert_eq!(n.map(|e| e.tag), None, "末尾之后没有 next");
-        // 查询超出末尾：prev 是最后一个，cur/next 都没有（与 `Collex` 一致）。
-        let (prev, cur, next, cursor) = s.find(&99);
-        assert_eq!(prev.map(|e| e.tag), Some(60));
-        assert_eq!((cur.map(|e| e.tag), next.map(|e| e.tag)), (None, None));
-        assert!(cursor.is_none(), "末尾之后不给游标");
+        let tags = |lo: i64, hi: Option<i64>| -> Vec<u8> {
+            super::range(&s, &lo, hi.as_ref()).map(|e| e.tag).collect()
+        };
+        assert_eq!(tags(2, Some(4)), vec![20, 40], "含两端");
+        assert_eq!(tags(3, Some(5)), vec![40], "空档下界从第一个 ≥ 开始");
+        assert_eq!(tags(4, None), vec![40, 60], "上无界");
+        assert_eq!(tags(-5, Some(4)), vec![20, 40], "负下界 = 从头开始");
+        assert_eq!(tags(7, None), Vec::<u8>::new(), "越界为空");
+        let empty = Store::<Elem, i64>::new();
+        assert_eq!(super::range(&empty, &0, Some(&9)).count(), 0, "空集合");
     }
 
     /// 插入/修改的唯一键与搬位语义。
