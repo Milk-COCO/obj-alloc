@@ -81,6 +81,7 @@ where
             store.insert(v, pair).ok();
         }
         id_map.bump_max_id_to(repr.max_id);
+        store.rebuild();
 
         Ok(Self { id_map, store })
     }

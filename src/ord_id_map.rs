@@ -88,6 +88,7 @@ where
             let id = id_map.insert(v);
             store.insert(v, Pair(id, elem)).ok();
         }
+        store.rebuild();
         Self { id_map, store }
     }
 }
