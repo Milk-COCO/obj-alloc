@@ -19,7 +19,7 @@
 //! * `find_le_and_gt` = (`≤ v` 的最后一个, `> v` 的第一个)；
 //! * **`range(lo, hi)` = 区间 `[lo, hi]`（含两端；`hi = None` 上无界），按序产出
 //!   `&E`，推进 O(1)/元素**。上层要遍历一段区间一律走它 —— 用"`find_gt` 逐元素"
-//!   会退化成每元素一次定位（`BTreeMap` 上就是 O(log n)/元素，实测 3× 差距）。
+//!   会退化成每元素一次定位（`BTreeMap` 上就是 O(log n)/元素）。
 
 pub use field_collex::collex::ModifyError;
 

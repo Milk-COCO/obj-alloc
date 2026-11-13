@@ -204,8 +204,8 @@ where
     /// 按排序键升序、**不克隆载荷**。
     ///
     /// ⭐ 要遍历一段区间**一律走它**：推进是 O(1)/元素（`Collex` 沿链表、`BTreeMap`
-    /// 沿 `range` 迭代器）。早先上层用"`find_gt` 逐元素"那样写，在 `BTreeMap` 上就变成
-    /// 每元素一次 O(log n) 定位（实测 3× 差距）。
+    /// 沿 `range` 迭代器）。用"`find_gt` 逐元素"那样写，在 `BTreeMap` 上就变成
+    /// 每元素一次 O(log n) 定位。
     pub fn range(&self, lo: &V, hi: Option<&V>) -> RangeIter<'_, K, E, V> {
         // 反向区间早退：`BTreeMap::range` 在 `start > end` 时会 panic，别让外部
         // 传个反向区间就把进程带走。
