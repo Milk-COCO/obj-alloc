@@ -45,10 +45,12 @@ pub type StoreIntoIter<E, V> = field_collex::collex::iter::IntoIter<E, V>;
 #[cfg(not(feature = "store-btreemap"))]
 pub type StoreRange<'a, E, V> = CollexRange<'a, E, V>;
 
-/// `Collex` 上的区间迭代：`find_ge(lo)` 起步，之后每次沿 `next` 链前进一格。
+/// `Collex` 上的区间迭代：`find(lo)` 播种游标，之后每步用游标**在槽内前进**。
 ///
-/// 步进用 `find_gt` 而不是游标（`find`/`step`）：`Collex::find_gt` 本身就是沿链表
-/// 走一格，O(1)；游标只在"同一批查询里复用位置"时才有额外收益，这里用不上。
+/// 为什么必须用游标而不是每步 `find_gt`：`find_gt` 每次都要重新做"键 / unit →
+/// 槽下标 → 槽内查找"。`Beat` 这类键的槽空间是稀的（`UNIT = 1/4`，而真实拍很少
+/// 正好落在 1/4 网格上），一次重定位实测 ~200 ns/元素，比游标推进贵一个量级
+/// （`playbench`/`store_micro` 基准）。
 #[cfg(not(feature = "store-btreemap"))]
 pub struct CollexRange<'a, E, V>
 where
@@ -56,6 +58,8 @@ where
     V: field_collex::FieldValue,
 {
     store: &'a field_collex::Collex<E, V>,
+    /// `find(lo)` 给的游标；`None` = 后面没有元素。
+    cursor: Option<field_collex::collex::CollexCursor>,
     next: Option<&'a E>,
     /// 上界（含）；`None` = 上无界。
     hi: Option<V>,
@@ -76,7 +80,11 @@ where
             self.next = None;
             return None;
         }
-        self.next = self.store.find_gt(&v);
+        match self.cursor.as_mut() {
+            // 游标推进一格：返回的 `next` 是"第一个比 v 大"的元素。
+            Some(cursor) => self.next = self.store.step(cursor, &v).2,
+            None => self.next = None,
+        }
         Some(e)
     }
 }
@@ -92,15 +100,12 @@ where
     E: field_collex::Collexetable<V>,
     V: field_collex::FieldValue,
 {
-    // 负下界 ⇒ 从第一颗开始（`Collex` 只收非负键，查询负值一律 None）。
-    let first = if lo.lt(&V::zero()) {
-        store.first()
-    } else {
-        store.find_ge(lo)
-    };
+    // `find` 自己处理负下界（负值 ⇒ 从第一颗开始）与"越界 ⇒ 无游标"。
+    let (_, cur, next, cursor) = store.find(lo);
     CollexRange {
         store,
-        next: first,
+        cursor,
+        next: cur.or(next),
         hi: hi.copied(),
     }
 }
