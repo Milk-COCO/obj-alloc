@@ -3,9 +3,10 @@ pub mod pair;
 pub mod id_map;
 pub mod deser;
 pub mod ord_id_map;
-pub mod store;
 
 pub use ord_id_map::*;
 pub use id_map::*;
 pub use pair::*;
-pub use store::Store;
+
+/// 有序存储实现名（诊断/基准输出用）。
+pub const STORE_NAME: &str = "JumpArray";
